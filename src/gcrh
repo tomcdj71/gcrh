@@ -1,0 +1,205 @@
+#!/bin/env bash
+#
+# @file_name: gcrh
+#
+# @author: tomcdj71
+# @project_name: GCRH
+# @description: GCRH (Git Clone Repos Helper) is an helper tool for cloning user repositories
+# @version: 0.9.0
+# @usage: gcrh clone [username] [token] [public/private]
+#         gcrh update [username] [token]
+#
+# @dependencies: git, gh, jq, mflibs
+#
+# @license: BSD-3 Clause (Included in LICENSE)
+# Copyright (C) 2021-2022, Thomas Chauveau (@tomcdj71)
+# All rights reserved.
+#
+################################################################################
+
+################################################################################
+# @description: Load mflibs
+# @notes:  mschf-dev/mflibs needs to be present first in /usr/lib.
+# @package_url: https://github.com/mschf-dev/mflibs
+################################################################################
+source /usr/lib/mflibs/src/init.sh
+mflibs::import shell,log,status
+
+################################################################################
+# @description: Declare variables
+# @notes:
+################################################################################
+METHOD=$1
+if [ $METHOD == update ];then
+  GITHUB_USERNAME=$2
+  ACCESS_TOKEN=$3
+fi
+if [ $METHOD == "clone" ];then
+  GITHUB_USERNAME=$2
+  ACCESS_TOKEN=$3
+  VISIBILITY_CHOICE=$4
+  if [[ $3 == "public" || $3 == "private" ]];then 
+    ACCESS_TOKEN=""
+    VISIBILITY_CHOICE=$3
+  fi
+  if [ -z "$VISIBILITY_CHOICE" ];then
+    VISIBILITY_CHOICE='public'
+  fi
+  VISIBILiTY=$(echo $VISIBILITY_CHOICE | sed -r 's/(^|$)/"/g')
+fi
+
+if [ -z "$GITHUB_USERNAME" ];then
+  mflibs::shell::icon::cross::red; mflibs::shell::text::red "Username can't be empty."
+  die
+fi
+
+################################################################################
+# @description: Asks for an access token if no token is specified.
+#               Token is deleted once logged to GitHub.
+#               GitHub login is valid until the end of the script.
+# @dependencies: gh, mflibs
+# @notes: install guide can be found here : 
+#         https://www.mailslurp.com/blog/github-cli-auth-with-token-environment-variable/
+################################################################################
+if [ -z "${ACCESS_TOKEN}" ];then
+  mflibs::shell::text::yellow "What's your Oauth token?"
+  echo "Tokens can be created here : https://github.com/settings/tokens"
+  echo -en "> "
+  read -r ACCESS_TOKEN
+  set -u
+  echo "$ACCESS_TOKEN" > .githubtoken
+  unset ACCESS_TOKEN
+  gh auth login --with-token < .githubtoken
+  rm .githubtoken
+  gh auth status
+  sleep 2
+else 
+  echo "$ACCESS_TOKEN" > .githubtoken 
+  gh auth login --with-token < .githubtoken
+  rm .githubtoken
+  gh auth status
+  sleep 2
+fi 
+
+
+#################################################################################
+# @description: Retrieves user's repositories.
+#               Stores the result in a temporary .txt file.
+# @dependencies: jq, mflibs
+################################################################################
+if [ $METHOD == "clone" ];then
+  count=0
+  options=()
+  FINDREPO=$(gh api /user/repos |  jq "[ .[] | select(.visibility == $VISIBILiTY ) ]" | jq "[ .[] | select(.owner.login == \"$GITHUB_USERNAME\" ) ]" | jq '.[] | .full_name' | sed 's/"//g' > /tmp/repo_list.txt)
+  echo "$FINDREPO"
+  while IFS= read -r line; do
+    ((count++))
+    options+=("$line")
+  done < <(cat /tmp/repo_list.txt | head)
+  rm -f /tmp/repo_list.txt
+
+  #################################################################################
+  # @description: Function to prepare the display of the menu, or, of an error message.
+  #################################################################################
+  menu() {
+    echo "Select a repo :"
+    for i in ${!options[@]}; do
+      printf "%3d%s) %s\r\n" $((i+1)) "${choices[i]:- }" "${options[i]}"
+    done
+    if [[ "$msg" ]]; then echo "$msg"; fi
+  }
+
+  #################################################################################
+  # @description: Clears the screen for the first menu display.
+  #################################################################################
+  clear
+  echo "############################################################"
+  echo "# Clone git repositories from $GITHUB_USERNAME "
+  echo "############################################################"
+  echo ""
+
+  #################################################################################
+  # @description: Make a selection.
+  # @notes: The newline is wanted in the variable prompt which is a message.
+  #################################################################################
+  prompt="
+  Select / Deselect an option then validate with the [ENTER]."
+  while menu && read -rp "$prompt" num && [[ "$num" ]]; do
+
+  #################################################################################
+  # @description: Allows you to erase the previous menus which are redisplayed on each selection.
+  # @notes: Keeps only the last menu display.
+  #################################################################################
+  clear
+  echo "############################################################"
+  echo "# Clone git repositories from $GITHUB_USERNAME "
+  echo "############################################################"
+  echo ""
+
+    [[ "$num" != *[![:digit:]]* ]] &&
+    (( num > 0 && num <= ${#options[@]} )) ||
+    { msg= "# This options does not exists : '$num'."; continue; }
+    ((num--)); msg="
+    Last chosen action :
+    - ${options[num]} was ${choices[num]:+dé}selected."
+    [[ "${choices[num]}" ]] && choices[num]="" || choices[num]="+"
+  done
+
+  #################################################################################
+  # @description: Summary of all chosen actions.
+  #################################################################################
+  clear
+  echo "############################################################"
+  echo "# Clone git repositories from $GITHUB_USERNAME "
+  echo "############################################################"
+
+  printf "\r\nYou've chosen :\r\n"; msg=" - No choices has been made."
+  for i in ${!options[@]}; do
+    [[ "${choices[i]}" ]] && { printf " - %s\r\n" "${options[i]}"; msg=""; }
+  done
+
+  #################################################################################
+  # @description: Display an error message.
+  #################################################################################
+  echo "$msg"
+
+  #################################################################################
+  # @description: If no choice is made, restart the program.
+  #################################################################################
+  if [[ $msg = mflibs::shell::text::red" - No choice has been made." ]]
+  then
+    printf " \r\n"
+    mflibs::shell::text::red "End of program. No repo has been cloned.";
+  else
+    for i in ${!choices[@]}; do
+      unset 'choices[-1]'
+      echo ""
+      mflibs::shell::text::cyan::sl "Cloning git"; mflibs::shell::text::green::sl " ${options[i]} "; mflibs::shell::text::cyan "..."
+      gh repo clone ${options[i]} /opt/gcrh/${options[i]} > /dev/null 2>&1
+      mflibs::shell::text::green::sl " ${options[i]} "; mflibs::shell::text::cyan "cloned."
+    done
+  fi
+fi
+
+#################################################################################
+# @description: Find installed repositories.
+#               Update them accordinately.
+# @dependencies: gh, mflibs
+#################################################################################
+if [ $METHOD == "update" ];then
+  clear
+  echo "############################################################"
+  echo "# Update git repositories from $GITHUB_USERNAME "
+  echo "############################################################"
+  echo ""
+  cd /opt/gcrh/
+  for dir in $(find $GITHUB_USERNAME/ -maxdepth 1 -mindepth 1); do
+    mflibs::shell::text::cyan::sl "Updating "; mflibs::shell::text::green $dir
+    git -C $dir fetch && echo "HEAD was at $(git -C $dir log --oneline -n 1)" && git -C $dir reset --hard origin/$(git -C $dir rev-parse --abbrev-ref HEAD)
+    git -C $dir clean -f
+    git -C $dir pull origin $(git -C $dir rev-parse --abbrev-ref HEAD)
+    chown -R www-data: /opt/gcrh
+  done
+  echo ""
+  mflibs::shell::icon::check::green; mflibs::shell::text::green "Repos updated."
+fi
