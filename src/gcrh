@@ -38,6 +38,7 @@ if [ $METHOD == "clone" ];then
   GITHUB_USERNAME=$2
   ACCESS_TOKEN=$3
   VISIBILITY_CHOICE=$4
+  ARCHIVED=$5
   if [[ $3 == "public" || $3 == "private" ]];then 
     ACCESS_TOKEN=""
     VISIBILITY_CHOICE=$3
@@ -90,7 +91,7 @@ fi
 if [ $METHOD == "clone" ];then
   count=0
   options=()
-  FINDREPO=$(gh api /user/repos |  jq "[ .[] | select(.visibility == $VISIBILiTY ) ]" | jq "[ .[] | select(.owner.login == \"$GITHUB_USERNAME\" ) ]" | jq '.[] | .full_name' | sed 's/"//g' > /tmp/repo_list.txt)
+  FINDREPO=$(gh api /user/repos |  jq "[ .[] | select(.visibility == $VISIBILiTY ) ]" | jq "[ .[] | select(.owner.login == \"$GITHUB_USERNAME\" ) ]" | jq '[ .[] | select(.archived == false) ]' | jq '.[] | .full_name' | sed 's/"//g' > /tmp/repo_list.txt)
   echo "$FINDREPO"
   while IFS= read -r line; do
     ((count++))
