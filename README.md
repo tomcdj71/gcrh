@@ -67,14 +67,14 @@ ln -s /path/to/gcrh/src/gcrh /usr/lib/gcrh
 ```
 
 ### Clone repo(s)
-`gcrh clone [username] [token] [public/private]`  
+`gcrh clone -u [username] -t [token] -v [public/private (default:public)] -a [true/false (default:false)]`  
 Example:  
-`gcrh clone tomcdj71 ghp_MYSUPERTOKEN public` will retrieve all my public repos and then ask what repos you want clone to `/opt/gcrh/tomcdj71`
+`gcrh clone -u tomcdj71 -t ghp_MYSUPERTOKEN -v public -a false` will retrieve all my public and non-archived repos and then ask what repos you want clone to `/opt/gcrh/tomcdj71`
 
 ### Update repos
-`gcrh update [username] [token]`  
+`gcrh update -u [username] -t [token]`  
 Example:   
-`gcrh update tomcdj ghp_MYSUPERTOKEN` will find all cloned repos and then updates them to the latest commit.
+`gcrh update -u tomcdj -t ghp_MYSUPERTOKEN` will find all cloned repos and then updates them to the latest commit. All other flags are not taken into consideration.
 
 ## 🤝 Contributing
 ___

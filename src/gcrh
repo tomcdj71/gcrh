@@ -5,7 +5,7 @@
 # @author: tomcdj71
 # @project_name: GCRH
 # @description: GCRH (Git Clone Repos Helper) is an helper tool for cloning user repositories
-# @version: 0.9.0
+# @version: 1.0.0
 # @usage: gcrh clone [username] [token] [public/private]
 #         gcrh update [username] [token]
 #
@@ -26,33 +26,98 @@ source /usr/lib/mflibs/src/init.sh
 mflibs::import shell,log,status
 
 ################################################################################
-# @description: Declare variables
-# @notes:
+# @description: Display help message
 ################################################################################
-METHOD=$1
-if [ $METHOD == update ];then
-  GITHUB_USERNAME=$2
-  ACCESS_TOKEN=$3
-fi
-if [ $METHOD == "clone" ];then
-  GITHUB_USERNAME=$2
-  ACCESS_TOKEN=$3
-  VISIBILITY_CHOICE=$4
-  if [[ $3 == "public" || $3 == "private" ]];then 
-    ACCESS_TOKEN=""
-    VISIBILITY_CHOICE=$3
-  fi
-  if [ -z "$VISIBILITY_CHOICE" ];then
-    VISIBILITY_CHOICE='public'
-  fi
-  VISIBILiTY=$(echo $VISIBILITY_CHOICE | sed -r 's/(^|$)/"/g')
-fi
 
-if [ -z "$GITHUB_USERNAME" ];then
-  mflibs::shell::icon::cross::red; mflibs::shell::text::red "Username can't be empty."
-  die
-fi
+function _printHelp(){
+  echo "$package - helper tool for cloning user repositories"
+  echo " "
+  echo "$package [option] [arguments]"
+  echo " "
+  echo "options:"
+  echo "clone       Clone one or multiple repos"
+  echo "update      Update all installed repos (pull)"
+  echo " "
+  echo "arguments:"
+  echo "k           Your Github Access Token."
+  echo "u           Your GitHub Username"
+  echo " "
+  echo "optional arguments:"
+  echo "a           Show archived repos [true/false (default:false)]"
+  echo "v           Select repo type [public/private (default:public)]"
+  exit 0
+}
 
+################################################################################
+# @description: Declare variables
+################################################################################
+
+OPTION=$1
+case $OPTION in
+  clone)
+    :
+    ;;
+  update)
+    :
+    ;;
+  *)
+    _printHelp
+    ;;
+esac
+
+while test $# -gt 0; do
+  case "$2" in
+    -h|--help)
+      _printHelp
+      ;;
+    -k)
+      shift
+      if test $# -gt 0; then
+        export ACCESS_TOKEN=$2
+      else
+        echo "No token selected... [exiting]"
+      fi
+      shift
+      ;;
+    -u)
+      shift
+      if test $# -gt 0; then
+        export GITHUB_USERNAME=$2
+      else
+        echo "No username selected... [exiting]"
+        exit 1
+      fi
+      shift
+      ;;
+    -v)
+      shift
+      if test $# -gt 0; then
+        export VISIBILITY=$2
+      else
+        :
+      fi
+      shift
+      ;;
+    -a)
+      shift
+      if test $# -gt 1; then
+        export ARCHIVED=$2
+      else
+        :
+      fi
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+if [ -z "${ARCHIVED}" ];then 
+  ARCHIVED=false
+fi
+if [ -z "${VISIBILITY}" ];then 
+  VISIBILITY="public"
+fi
 ################################################################################
 # @description: Asks for an access token if no token is specified.
 #               Token is deleted once logged to GitHub.
@@ -80,17 +145,20 @@ else
   gh auth status
   sleep 2
 fi 
-
+if [ -z "${GITHUB_USERNAME}" ];then 
+  mflibs::status::error "A GitHub username is needed!"
+  exit 1
+fi
 
 #################################################################################
 # @description: Retrieves user's repositories.
 #               Stores the result in a temporary .txt file.
 # @dependencies: jq, mflibs
 ################################################################################
-if [ $METHOD == "clone" ];then
+if [ $OPTION == "clone" ];then
   count=0
   options=()
-  FINDREPO=$(gh api /user/repos |  jq "[ .[] | select(.visibility == $VISIBILiTY ) ]" | jq "[ .[] | select(.owner.login == \"$GITHUB_USERNAME\" ) ]" | jq '.[] | .full_name' | sed 's/"//g' > /tmp/repo_list.txt)
+  FINDREPO=$(gh api /user/repos |  jq "[ .[] | select(.visibility == \"${VISIBILITY}\" ) ]" | jq "[ .[] | select(.owner.login == \"$GITHUB_USERNAME\" ) ]" | jq "[ .[] | select(.archived == $ARCHIVED ) ]" | jq '.[] | .full_name' | sed 's/"//g' > /tmp/repo_list.txt)
   echo "$FINDREPO"
   while IFS= read -r line; do
     ((count++))
@@ -186,7 +254,7 @@ fi
 #               Update them accordinately.
 # @dependencies: gh, mflibs
 #################################################################################
-if [ $METHOD == "update" ];then
+if [ $OPTION == "update" ];then
   clear
   echo "############################################################"
   echo "# Update git repositories from $GITHUB_USERNAME "
